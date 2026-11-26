@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian Run — a flight game</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0e1a26; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .hidden { display: none !important; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #eaf4ff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  .panel { background: rgba(8, 20, 32, .55); border: 1px solid rgba(255,255,255,.25); border-radius: 8px; padding: 8px 12px; }
+  #hud-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .hud-block { min-width: 170px; }
+  .hud-label { font-size: 11px; letter-spacing: 2px; color: #9fc6e8; }
+  .hud-value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #hud-heading { text-align: center; font-size: 22px; font-weight: 700; }
+  #hud-right { text-align: right; }
+  #hud-right .hud-value { font-size: 20px; }
+  #hud-horizon { position: absolute; left: 14px; bottom: 14px; }
+  #horizon { display: block; border-radius: 50%; border: 2px solid rgba(255,255,255,.6); background: rgba(8,20,32,.5); }
+  #hud-throttle { position: absolute; right: 14px; bottom: 14px; width: 170px; }
+  #hud-throttle-bar { height: 10px; background: rgba(255,255,255,.18); border-radius: 5px; overflow: hidden; margin-top: 4px; }
+  #hud-throttle-fill { height: 100%; width: 0%; background: #ffb020; }
+  #hud-message { position: absolute; top: 22%; left: 0; right: 0; text-align: center; font-size: 30px; font-weight: 800; letter-spacing: 1px; color: #ffd23e; opacity: 0; transition: opacity .25s; }
+  .screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .screen-card { background: rgba(6, 16, 26, .72); border: 1px solid rgba(255,255,255,.3); border-radius: 14px; padding: 28px 40px; text-align: center; color: #eaf4ff; max-width: 560px; }
+  .screen-card h1 { margin: 0 0 6px; font-size: 46px; letter-spacing: 4px; color: #ffd23e; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  .screen-card h2 { margin: 0 0 10px; font-size: 30px; letter-spacing: 2px; color: #ffd23e; }
+  .screen-card p { margin: 8px 0; font-size: 16px; line-height: 1.5; }
+  .screen-card .keys { font-size: 14px; color: #bcd8ee; line-height: 1.9; }
+  .screen-card .cta { margin-top: 16px; font-size: 18px; font-weight: 700; letter-spacing: 2px; color: #ffffff; }
+  .screen-card .big { font-size: 24px; font-weight: 700; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<canvas id="game" aria-label="Meridian Run: fly the jet through ten glowing rings over the valley, then land on the runway"></canvas>
+<p id="status" role="status" aria-live="polite"></p>
+<div id="hud">
+  <div id="hud-top">
+    <div class="hud-block panel">
+      <div class="hud-label">ALTITUDE</div>
+      <div class="hud-value" id="hud-alt">0 FT</div>
+      <div class="hud-label">SPEED</div>
+      <div class="hud-value" id="hud-speed">0 KT</div>
+    </div>
+    <div class="panel">
+      <div class="hud-label" style="text-align:center">HEADING</div>
+      <div id="hud-heading">000° N</div>
+    </div>
+    <div class="hud-block panel" id="hud-right">
+      <div class="hud-value" id="hud-rings">RINGS 0/10</div>
+      <div class="hud-value" id="hud-time">00:00</div>
+      <div class="hud-value" id="hud-score">SCORE 0</div>
+    </div>
+  </div>
+  <div id="hud-horizon"><canvas id="horizon" width="120" height="120"></canvas></div>
+  <div id="hud-throttle" class="panel">
+    <div class="hud-label">THROTTLE</div>
+    <div id="hud-throttle-bar"><div id="hud-throttle-fill"></div></div>
+  </div>
+  <div id="hud-message"></div>
+</div>
+<div class="screen" id="screen-title">
+  <div class="screen-card">
+    <h1>MERIDIAN RUN</h1>
+    <p>Fly the jet through ten glowing rings over the valley, then bring her home and land on the runway. Mind the mountains — and the sea.</p>
+    <p class="keys">ARROWS — pitch &amp; bank &nbsp;·&nbsp; SHIFT / W — throttle up &nbsp;·&nbsp; CTRL / S — throttle down<br>Mouse drag — steer &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; R — restart</p>
+    <p class="cta">PRESS ENTER TO FLY</p>
+    <p id="title-best"></p>
+  </div>
+</div>
+<div class="screen hidden" id="screen-paused">
+  <div class="screen-card">
+    <h2>PAUSED</h2>
+    <p class="cta">PRESS P TO KEEP FLYING</p>
+  </div>
+</div>
+<div class="screen hidden" id="screen-over">
+  <div class="screen-card">
+    <h2 id="over-reason">YOU CRASHED</h2>
+    <p class="big" id="over-score">SCORE 0</p>
+    <p id="over-best">BEST 0</p>
+    <p class="cta">PRESS R TO FLY AGAIN</p>
+  </div>
+</div>
+<div class="screen hidden" id="screen-complete">
+  <div class="screen-card">
+    <h2>MISSION COMPLETE</h2>
+    <p>All ten rings flown — and a clean landing on the runway.</p>
+    <p class="big" id="complete-score">SCORE 0</p>
+    <p id="complete-time">TIME 00:00</p>
+    <p id="complete-best">BEST 0</p>
+    <p class="cta">PRESS R TO FLY AGAIN</p>
+  </div>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
